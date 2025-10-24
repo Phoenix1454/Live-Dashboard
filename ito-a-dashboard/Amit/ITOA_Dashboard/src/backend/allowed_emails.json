@@ -1,6 +1,7 @@
 {
   "allowed_emails": [
-    "ak1454789@gmail.com"
+    "ak1454789@gmail.com",
+    "flavournomics@gmail.com"
   ],
   "_description": "Email Allowlist Configuration",
   "_note": "Only emails listed in 'allowed_emails' can sign in with Google OAuth",

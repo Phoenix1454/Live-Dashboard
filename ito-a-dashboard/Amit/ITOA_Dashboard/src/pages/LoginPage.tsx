@@ -174,19 +174,6 @@ export function LoginPage() {
             </svg>
             Sign in with Google
           </Button>
-
-          {/* Demo Credentials */}
-          <div className="mt-6 pt-6 border-t border-slate-800">
-            <p className="text-xs text-slate-400 mb-2">Demo Account:</p>
-            <div className="bg-slate-800/50 rounded p-3 space-y-1">
-              <p className="text-sm text-slate-300">
-                <span className="text-slate-500">Username:</span> <span className="font-mono text-teal-400">demo</span>
-              </p>
-              <p className="text-sm text-slate-300">
-                <span className="text-slate-500">Password:</span> <span className="font-mono text-teal-400">demo123</span>
-              </p>
-            </div>
-          </div>
         </div>
       </div>
     </div>

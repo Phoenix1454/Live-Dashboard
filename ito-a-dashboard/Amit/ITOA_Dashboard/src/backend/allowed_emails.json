@@ -1,0 +1,20 @@
+{
+  "allowed_emails": [
+    "ak1454789@gmail.com"
+  ],
+  "_description": "Email Allowlist Configuration",
+  "_note": "Only emails listed in 'allowed_emails' can sign in with Google OAuth",
+  "_instructions": [
+    "1. Add new email addresses to the 'allowed_emails' array",
+    "2. Save this file",
+    "3. Restart the backend server for changes to take effect",
+    "4. Each email should be a separate string in the array"
+  ],
+  "_example": {
+    "allowed_emails": [
+      "admin@example.com",
+      "user1@company.com",
+      "user2@company.com"
+    ]
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "allowed_emails": [
+    "your-email@example.com"
+  ],
+  "_description": "Email Allowlist Configuration Template",
+  "_note": "Only emails listed in 'allowed_emails' can sign in with Google OAuth",
+  "_instructions": [
+    "1. Copy this file and rename it to 'allowed_emails.json'",
+    "2. Replace 'your-email@example.com' with actual email addresses",
+    "3. Add as many emails as needed to the array",
+    "4. Save and restart the backend server",
+    "5. Keep allowed_emails.json out of version control if it contains sensitive data"
+  ],
+  "_example": {
+    "allowed_emails": [
+      "admin@company.com",
+      "manager@company.com",
+      "analyst@company.com"
+    ]
+  }
+}

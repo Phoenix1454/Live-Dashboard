@@ -1,0 +1,362 @@
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                                                                             │
+│                  EmailTab.tsx - BEFORE vs AFTER Comparison                  │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+╔═══════════════════════════════════════════════════════════════════════════╗
+║                              BEFORE                                        ║
+╚═══════════════════════════════════════════════════════════════════════════╝
+
+┌───────────────────────────────────────────────────────────────────────────┐
+│ Hard-Coded Static Recommendations                                         │
+└───────────────────────────────────────────────────────────────────────────┘
+
+const recommendations = [
+  {
+    icon: <Clock className="w-5 h-5" />,
+    title: 'Optimize send times',
+    description: 'Emails sent at 10 AM on Tuesdays have 28% higher open rates.',
+    impact: 'high',
+  },
+  {
+    icon: <Target className="w-5 h-5" />,
+    title: 'Segment your audience',
+    description: 'Personalized campaigns show 3x better engagement...',
+    impact: 'high',
+  },
+  // ... 2 more static recommendations
+];
+
+┌───────────────────────────────────────────────────────────────────────────┐
+│ Display (Simple Map)                                                      │
+└───────────────────────────────────────────────────────────────────────────┘
+
+<div className="grid gap-4 md:grid-cols-2">
+  {recommendations.map((rec, index) => (
+    <Card>
+      <div className="flex items-start gap-3">
+        {rec.icon}
+        <h4>{rec.title}</h4>
+        <span className={rec.impact === 'high' ? 'green' : 'yellow'}>
+          {rec.impact.toUpperCase()}
+        </span>
+        <p>{rec.description}</p>
+      </div>
+    </Card>
+  ))}
+</div>
+
+┌───────────────────────────────────────────────────────────────────────────┐
+│ Limitations                                                               │
+└───────────────────────────────────────────────────────────────────────────┘
+
+❌ Same recommendations for all users
+❌ Not based on actual data
+❌ No consideration of current performance
+❌ Generic advice
+❌ Static icons and categorization
+❌ No AI intelligence
+
+
+╔═══════════════════════════════════════════════════════════════════════════╗
+║                               AFTER                                        ║
+╚═══════════════════════════════════════════════════════════════════════════╝
+
+┌───────────────────────────────────────────────────────────────────────────┐
+│ State Management                                                          │
+└───────────────────────────────────────────────────────────────────────────┘
+
+const [recommendations, setRecommendations] = useState<string[]>([]);
+const [recommendationsLoading, setRecommendationsLoading] = useState(false);
+const [recommendationsError, setRecommendationsError] = useState<string | null>(null);
+
+┌───────────────────────────────────────────────────────────────────────────┐
+│ Data Summary Creation                                                     │
+└───────────────────────────────────────────────────────────────────────────┘
+
+const dataSummary = `
+Email Campaign Performance Summary:
+- Total Campaigns: ${summaryData.topCampaigns.length}
+- Average Open Rate: ${summaryData.kpis.avgOpenRate.toFixed(1)}%
+- Average Click-to-Open Rate (CTOR): ${summaryData.kpis.avgCtor.toFixed(1)}%
+- Unsubscribe Rate: ${summaryData.kpis.unsubscribeRate.toFixed(2)}%
+- Total Clicks: ${summaryData.kpis.totalClicks.toLocaleString()}
+- Open Rate Trend: ${summaryData.kpis.trends.openRate > 0 ? '+' : ''}...%
+- CTOR Trend: ${summaryData.kpis.trends.ctor > 0 ? '+' : ''}...%
+- Top Campaign: "${summaryData.topCampaigns[0]?.subject_line}" with...
+- Funnel Conversion: ...% from sends to clicks
+`.trim();
+
+┌───────────────────────────────────────────────────────────────────────────┐
+│ API Integration with Authentication                                       │
+└───────────────────────────────────────────────────────────────────────────┘
+
+useEffect(() => {
+  const fetchRecommendations = async () => {
+    if (!summaryData) return;
+    
+    setRecommendationsLoading(true);
+    
+    const token = localStorage.getItem('token');
+    
+    const response = await fetch(
+      'http://127.0.0.1:8000/api/recommendations/email',
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ data_summary: dataSummary })
+      }
+    );
+    
+    const result = await response.json();
+    setRecommendations(result.recommendations || []);
+  };
+  
+  fetchRecommendations();
+}, [summaryData]);
+
+┌───────────────────────────────────────────────────────────────────────────┐
+│ Dynamic UI with Multiple States                                           │
+└───────────────────────────────────────────────────────────────────────────┘
+
+{/* LOADING STATE */}
+{recommendationsLoading && (
+  <div className="flex items-center justify-center py-12">
+    <Loader2 className="w-8 h-8 text-teal-400 animate-spin" />
+    <p>Generating AI recommendations...</p>
+  </div>
+)}
+
+{/* ERROR STATE */}
+{recommendationsError && (
+  <div className="bg-red-900/20 border border-red-500/50 rounded-lg p-4">
+    <p className="text-red-400">⚠️ {recommendationsError}</p>
+  </div>
+)}
+
+{/* SUCCESS STATE - DYNAMIC RECOMMENDATIONS */}
+{recommendations.map((recommendation, index) => (
+  <motion.div key={index} initial={{ opacity: 0, x: -20 }} animate={...}>
+    <Card className="...hover effects...">
+      <div className="flex items-start gap-3">
+        <div className="icon-container">
+          <TrendingUp className="w-5 h-5" />
+        </div>
+        <div className="flex-1">
+          <span className="badge">AI INSIGHT #{index + 1}</span>
+          <p className="recommendation-text">{recommendation}</p>
+        </div>
+      </div>
+    </Card>
+  </motion.div>
+))}
+
+{/* EMPTY STATE */}
+{recommendations.length === 0 && (
+  <div className="text-center py-8">
+    <Lightbulb className="w-12 h-12 opacity-50" />
+    <p>No recommendations available at this time.</p>
+  </div>
+)}
+
+┌───────────────────────────────────────────────────────────────────────────┐
+│ Benefits                                                                  │
+└───────────────────────────────────────────────────────────────────────────┘
+
+✅ Personalized to actual campaign data
+✅ AI-powered insights via Google Gemini
+✅ Context-aware recommendations
+✅ Loading states for better UX
+✅ Error handling for robustness
+✅ Authentication integrated
+✅ Dynamic content that changes with data
+✅ Professional animations
+✅ Actionable, specific advice
+
+
+╔═══════════════════════════════════════════════════════════════════════════╗
+║                         VISUAL COMPARISON                                  ║
+╚═══════════════════════════════════════════════════════════════════════════╝
+
+BEFORE - Static Display:
+┌─────────────────────────────────────────────────────────────────────────┐
+│ AI-Powered Recommendations                                              │
+├─────────────────────────────────────────────────────────────────────────┤
+│  ┌──────────────────────────┐  ┌──────────────────────────┐           │
+│  │ 🕐 Optimize send times   │  │ 🎯 Segment your audience │           │
+│  │ HIGH                     │  │ HIGH                     │           │
+│  │ Emails sent at 10 AM...  │  │ Personalized campaigns...│           │
+│  └──────────────────────────┘  └──────────────────────────┘           │
+│  ┌──────────────────────────┐  ┌──────────────────────────┐           │
+│  │ ⚡ A/B test subject lines│  │ 📈 Re-engage inactive... │           │
+│  │ MEDIUM                   │  │ MEDIUM                   │           │
+│  │ Questions in subject...  │  │ Create a win-back...     │           │
+│  └──────────────────────────┘  └──────────────────────────┘           │
+└─────────────────────────────────────────────────────────────────────────┘
+                    ⬇️ Same content every time
+
+
+AFTER - Dynamic AI-Generated:
+┌─────────────────────────────────────────────────────────────────────────┐
+│ AI-Powered Recommendations ✨                                           │
+├─────────────────────────────────────────────────────────────────────────┤
+│  [First Load - Shows Loading Spinner]                                  │
+│  ┌───────────────────────────────────────────────────────────────────┐ │
+│  │              🔄                                                    │ │
+│  │    Generating AI recommendations...                               │ │
+│  └───────────────────────────────────────────────────────────────────┘ │
+│                                                                         │
+│  [After 2-5 seconds - Shows Personalized Insights]                     │
+│  ┌───────────────────────────────────────────────────────────────────┐ │
+│  │ 📈 AI INSIGHT #1                                                   │ │
+│  │ Your open rate of 24.5% is below industry average of 28%.         │ │
+│  │ Consider A/B testing subject lines with urgency words to boost... │ │
+│  └───────────────────────────────────────────────────────────────────┘ │
+│  ┌───────────────────────────────────────────────────────────────────┐ │
+│  │ 📈 AI INSIGHT #2                                                   │ │
+│  │ Your CTOR of 3.2% shows strong engagement once emails are opened. │ │
+│  │ Focus on improving the 24.5% open rate through better preview...  │ │
+│  └───────────────────────────────────────────────────────────────────┘ │
+│  ┌───────────────────────────────────────────────────────────────────┐ │
+│  │ 📈 AI INSIGHT #3                                                   │ │
+│  │ The declining trend of -5% in open rates suggests email fatigue.  │ │
+│  │ Try reducing send frequency or implementing re-engagement...      │ │
+│  └───────────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────────────┘
+        ⬇️ Changes based on actual performance data
+
+
+╔═══════════════════════════════════════════════════════════════════════════╗
+║                          KEY IMPROVEMENTS                                  ║
+╚═══════════════════════════════════════════════════════════════════════════╝
+
+┌────────────────────┬──────────────────┬─────────────────────────────────┐
+│ Feature            │ Before           │ After                           │
+├────────────────────┼──────────────────┼─────────────────────────────────┤
+│ Data Source        │ Hard-coded       │ AI (Google Gemini)              │
+│ Personalization    │ None             │ Based on actual KPIs            │
+│ Loading State      │ No               │ Yes (spinner + message)         │
+│ Error Handling     │ No               │ Yes (error messages)            │
+│ Authentication     │ Not required     │ JWT token required              │
+│ Dynamic Content    │ Static           │ Changes with data               │
+│ Number of Insights │ Always 4         │ 2-3 contextual insights         │
+│ Impact Labels      │ HIGH/MEDIUM      │ AI INSIGHT #1, #2, #3           │
+│ Icons              │ Mixed icons      │ Consistent TrendingUp + Sparkle │
+│ Layout             │ 2-column grid    │ Single column for readability   │
+│ Animation          │ Basic fade-in    │ Staggered fade + slide          │
+│ UX States          │ 1 (loaded)       │ 4 (loading, error, success, 0)  │
+│ API Integration    │ None             │ POST to /api/recommendations    │
+│ Empty State        │ N/A              │ Graceful fallback message       │
+└────────────────────┴──────────────────┴─────────────────────────────────┘
+
+
+╔═══════════════════════════════════════════════════════════════════════════╗
+║                          EXAMPLE OUTPUT                                    ║
+╚═══════════════════════════════════════════════════════════════════════════╝
+
+Sample AI-Generated Recommendation based on actual data:
+
+Input Data Summary:
+------------------
+Email Campaign Performance Summary:
+- Total Campaigns: 15
+- Average Open Rate: 24.5%
+- Average Click-to-Open Rate (CTOR): 18.3%
+- Unsubscribe Rate: 0.85%
+- Total Clicks: 1,245
+- Open Rate Trend: -5.2%
+- CTOR Trend: +2.1%
+- Top Campaign: "Summer Sale - 50% Off Everything" with 245 clicks
+- Funnel Conversion: 4.1% from sends to clicks
+
+AI Response:
+-----------
+1. "Your 24.5% open rate is trending downward (-5.2%). Implement send time 
+   optimization by analyzing when your top campaign was sent, and consider 
+   testing different send times for your next 3 campaigns to reverse this trend."
+
+2. "The positive CTOR trend (+2.1%) indicates strong email content. Leverage 
+   this by focusing efforts on improving subject lines and preview text to 
+   increase the open rate, which will multiply the impact of your already 
+   effective email body content."
+
+3. "Your top-performing campaign 'Summer Sale - 50% Off Everything' generated 
+   20% of all clicks. Analyze its subject line structure, visual design, and 
+   call-to-action placement, then apply these winning elements to your next 
+   promotional campaigns."
+
+
+╔═══════════════════════════════════════════════════════════════════════════╗
+║                            ARCHITECTURE                                    ║
+╚═══════════════════════════════════════════════════════════════════════════╝
+
+Component Load
+      │
+      ▼
+Fetch Email Data (/api/email/summary)
+      │
+      ▼
+Calculate KPIs (backend)
+      │
+      ▼
+Set summaryData state
+      │
+      ▼
+Trigger useEffect (dependency: summaryData)
+      │
+      ▼
+Build Data Summary String
+      │
+      ▼
+Get JWT Token (localStorage)
+      │
+      ▼
+POST to /api/recommendations/email
+      │
+      ├─────────────────┐
+      │                 │
+      ▼                 ▼
+   Backend         Show Loading Spinner
+   receives        "Generating AI recommendations..."
+   request
+      │
+      ▼
+   Call Gemini API
+   (recommender.py)
+      │
+      ▼
+   Parse Response
+   (2-3 recommendations)
+      │
+      ▼
+   Return JSON
+      │
+      ▼
+Update recommendations state
+      │
+      ▼
+Render Recommendations
+(with animations)
+
+
+╔═══════════════════════════════════════════════════════════════════════════╗
+║                              CONCLUSION                                    ║
+╚═══════════════════════════════════════════════════════════════════════════╝
+
+The EmailTab component has been transformed from showing static, generic
+recommendations to a dynamic, intelligent system that:
+
+✨ Analyzes real campaign performance data
+✨ Generates personalized, actionable insights using AI
+✨ Provides a professional user experience with loading states
+✨ Handles errors gracefully
+✨ Integrates securely with JWT authentication
+✨ Updates automatically when data changes
+
+This represents a significant upgrade in both functionality and user value,
+turning the recommendations section from a static display into an intelligent
+marketing advisor powered by Google's Gemini AI.

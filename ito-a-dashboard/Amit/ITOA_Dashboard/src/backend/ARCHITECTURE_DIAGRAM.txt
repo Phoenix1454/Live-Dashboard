@@ -1,0 +1,197 @@
+"""
+AI Recommendations System - Architecture & Flow
+================================================
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         CLIENT (Frontend/API)                            │
+│                                                                          │
+│  User requests recommendations for a marketing channel                  │
+└────────────────────────────────┬────────────────────────────────────────┘
+                                 │
+                                 │ POST /api/recommendations/{channel_type}
+                                 │ Authorization: Bearer <token>
+                                 │ Body: { "data_summary": "..." }
+                                 │
+                                 ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                        FASTAPI ENDPOINT (app.py)                         │
+│                                                                          │
+│  1. Authenticate user (JWT token validation)                            │
+│  2. Validate channel type (email, linkedin, blog, seo, web, overview)   │
+│  3. Validate data_summary (not empty)                                   │
+└────────────────────────────────┬────────────────────────────────────────┘
+                                 │
+                                 │ await get_gemini_recommendations(
+                                 │   channel_name, data_summary
+                                 │ )
+                                 │
+                                 ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    RECOMMENDER MODULE (recommender.py)                   │
+│                                                                          │
+│  1. Load GEMINI_API_KEY from .env                                       │
+│  2. Configure google.generativeai client                                │
+│  3. Create marketing analyst prompt with:                               │
+│     - Channel context                                                   │
+│     - Performance data summary                                          │
+│     - Instructions for 2-3 actionable recommendations                   │
+└────────────────────────────────┬────────────────────────────────────────┘
+                                 │
+                                 │ model.generate_content(prompt)
+                                 │
+                                 ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                       GOOGLE GEMINI API (Cloud)                          │
+│                                                                          │
+│  Gemini Pro Model analyzes the data and generates:                      │
+│  1. First recommendation                                                │
+│  2. Second recommendation                                               │
+│  3. Third recommendation (optional)                                     │
+└────────────────────────────────┬────────────────────────────────────────┘
+                                 │
+                                 │ Returns text response
+                                 │
+                                 ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    RESPONSE PARSER (recommender.py)                      │
+│                                                                          │
+│  1. Extract text from Gemini response                                   │
+│  2. Split into lines                                                    │
+│  3. Remove numbering (1., 2., 3.) and bullets (-, *)                    │
+│  4. Clean whitespace                                                    │
+│  5. Return list of recommendation strings                               │
+└────────────────────────────────┬────────────────────────────────────────┘
+                                 │
+                                 │ return recommendations: List[str]
+                                 │
+                                 ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                        FASTAPI ENDPOINT (app.py)                         │
+│                                                                          │
+│  Format response as JSON:                                               │
+│  {                                                                       │
+│    "channel": "email",                                                  │
+│    "recommendations": [...],                                            │
+│    "success": true,                                                     │
+│    "message": "Successfully generated 3 recommendations..."             │
+│  }                                                                       │
+└────────────────────────────────┬────────────────────────────────────────┘
+                                 │
+                                 │ HTTP 200 OK
+                                 │ JSON Response
+                                 │
+                                 ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         CLIENT (Frontend/API)                            │
+│                                                                          │
+│  Receives and displays AI-generated recommendations                     │
+└─────────────────────────────────────────────────────────────────────────┘
+
+
+ERROR HANDLING FLOW
+===================
+
+┌──────────────────────┐
+│  Missing API Key?    │──Yes──> 500 Error: Configuration error
+└──────┬───────────────┘
+       │ No
+       ▼
+┌──────────────────────┐
+│ Invalid Channel?     │──Yes──> 400 Error: Invalid channel type
+└──────┬───────────────┘
+       │ No
+       ▼
+┌──────────────────────┐
+│ Empty Summary?       │──Yes──> 400 Error: data_summary cannot be empty
+└──────┬───────────────┘
+       │ No
+       ▼
+┌──────────────────────┐
+│ Invalid Token?       │──Yes──> 401 Error: Unauthorized
+└──────┬───────────────┘
+       │ No
+       ▼
+┌──────────────────────┐
+│ Gemini API Error?    │──Yes──> 500 Error: Failed to generate recommendations
+└──────┬───────────────┘
+       │ No
+       ▼
+┌──────────────────────┐
+│   SUCCESS! ✅        │
+└──────────────────────┘
+
+
+DATA FLOW EXAMPLE
+=================
+
+Input (Client):
+{
+  "data_summary": "Email: 15 campaigns, 24.5% open rate, 3.2% CTR, declining trend"
+}
+
+↓
+
+Prompt to Gemini:
+"You are an expert marketing analyst...
+Channel: EMAIL
+Performance Data Summary:
+Email: 15 campaigns, 24.5% open rate, 3.2% CTR, declining trend
+...provide 2-3 actionable recommendations..."
+
+↓
+
+Gemini Response:
+"1. Segment your audience based on engagement history...
+2. A/B test subject lines and preview text...
+3. Analyze the top-performing campaign elements..."
+
+↓
+
+Parsed Output:
+[
+  "Segment your audience based on engagement history...",
+  "A/B test subject lines and preview text...",
+  "Analyze the top-performing campaign elements..."
+]
+
+↓
+
+Final Response (Client):
+{
+  "channel": "email",
+  "recommendations": [
+    "Segment your audience based on engagement history...",
+    "A/B test subject lines and preview text...",
+    "Analyze the top-performing campaign elements..."
+  ],
+  "success": true,
+  "message": "Successfully generated 3 recommendations for email channel"
+}
+
+
+SECURITY LAYERS
+===============
+
+1. JWT Authentication: User must be logged in
+2. Token Validation: Token must be valid and not expired
+3. Input Validation: Channel type and data summary validated
+4. API Key Protection: Gemini API key stored in .env (not in code)
+5. Error Sanitization: Generic error messages to prevent info leakage
+
+
+PERFORMANCE CONSIDERATIONS
+==========================
+
+Typical Response Times:
+- Authentication: <10ms
+- Validation: <5ms
+- Gemini API Call: 2-5 seconds
+- Response Parsing: <10ms
+-----------------------------------
+Total: ~2-5 seconds
+
+Optimization Opportunities:
+- Cache identical requests
+- Implement request queueing
+- Add timeout limits
+- Use async/await throughout

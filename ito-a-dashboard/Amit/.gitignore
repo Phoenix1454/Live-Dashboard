@@ -1,0 +1,36 @@
+# IDEs and editors
+.vscode/
+.idea/
+
+# macOS
+.DS_Store
+
+# Node.js
+**/node_modules
+**/dist
+.env
+.env.local
+.env.*.local
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Python
+__pycache__/
+*.pyc
+.venv
+venv/
+env/
+*.egg-info/
+pip-wheel-metadata/
+.pytest_cache/
+.coverage
+.hypothesis/
+htmlcov/
+*.log
+
+# Jupyter
+.ipynb_checkpoints
+
+# Data files - uncomment the line below if you don't want to commit data files
+# data/*.csv

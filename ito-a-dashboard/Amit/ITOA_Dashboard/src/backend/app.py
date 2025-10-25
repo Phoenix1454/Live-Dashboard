@@ -69,6 +69,7 @@ app.add_middleware(
 ALLOWED_ORIGINS = [
     os.getenv('FRONTEND_URL', 'http://localhost:3002'),
     'http://localhost:3002',
+    'http://localhost:3003',
     'http://localhost:5173',
 ]
 
@@ -99,7 +100,7 @@ oauth.register(
 )
 
 # Frontend redirect URL (where to send user after successful OAuth)
-FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:3002')
+FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:3003')
 
 # --- Path Calculation ---
 script_dir = os.path.dirname(os.path.abspath(__file__))

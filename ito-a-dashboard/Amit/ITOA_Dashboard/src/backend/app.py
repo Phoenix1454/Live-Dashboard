@@ -17,10 +17,8 @@ import httpx
 from dotenv import load_dotenv
 import google.generativeai as genai
 
-# Load environment variables from .env file
 load_dotenv()
 
-# Import authentication modules
 from auth import (
     Token, User, UserInDB, create_access_token, 
     get_current_active_user, ACCESS_TOKEN_EXPIRE_MINUTES
@@ -28,13 +26,8 @@ from auth import (
 from database import create_user, authenticate_user, get_user
 from pydantic import BaseModel
 
-# Import AI recommendation module
 from recommender import get_gemini_recommendations
 
-# ========================================
-# EMAIL ALLOWLIST FOR GOOGLE SIGN-IN
-# ========================================
-# Load allowed emails from JSON file
 def load_allowed_emails():
     """Load allowed emails from allowed_emails.json file"""
     try:
@@ -52,20 +45,15 @@ def load_allowed_emails():
     except Exception as e:
         return {"ak1454789@gmail.com"}  # Fallback to default
 
-# Load allowed emails on startup
 ALLOWED_EMAILS = load_allowed_emails()
 
 app = FastAPI(title="ItoA Analytics API", version="1.0.0")
 
-# Add session middleware (required for OAuth)
-# Generate a secure secret key: python -c "import secrets; print(secrets.token_urlsafe(32))"
 app.add_middleware(
     SessionMiddleware,
     secret_key=os.getenv('SESSION_SECRET_KEY', 'your-secret-session-key-change-in-production')
 )
 
-# CORS Configuration
-# For production: set FRONTEND_URL env variable to your Vercel domain
 ALLOWED_ORIGINS = [
     os.getenv('FRONTEND_URL', 'http://localhost:3002'),
     'http://localhost:3002',
@@ -81,14 +69,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ========================================
-# GOOGLE OAUTH CONFIGURATION
-# ========================================
 
-# OAuth configuration
 oauth = OAuth()
 
-# Configure Google OAuth client
 oauth.register(
     name='google',
     client_id=os.getenv('GOOGLE_CLIENT_ID', 'YOUR_GOOGLE_CLIENT_ID'),
@@ -99,10 +82,8 @@ oauth.register(
     }
 )
 
-# Frontend redirect URL (where to send user after successful OAuth)
 FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:3003')
 
-# --- Path Calculation ---
 script_dir = os.path.dirname(os.path.abspath(__file__))
 csv_path = os.path.join(script_dir, "data", "email_campaigns.csv")
 linkedin_csv_path = os.path.join(script_dir, "data", "linkedin_posts.csv")
@@ -110,7 +91,6 @@ blog_csv_path = os.path.join(script_dir, "data", "blog_posts.csv")
 seo_csv_path = os.path.join(script_dir, "data", "seo_metrics_daily.csv")
 web_analytics_csv_path = os.path.join(script_dir, "data", "web_analytics_daily.csv")
 
-# --- Pydantic Models for User Registration ---
 class UserCreate(BaseModel):
     username: str
     password: str
@@ -123,9 +103,6 @@ class UserResponse(BaseModel):
     full_name: Optional[str] = None
     message: str
 
-# ========================================
-# AUTHENTICATION ENDPOINTS
-# ========================================
 
 @app.post("/register", response_model=UserResponse, tags=["Authentication"])
 def register_user(user_data: UserCreate):
@@ -196,9 +173,6 @@ async def read_users_me(current_user: User = Depends(get_current_active_user)):
     """
     return current_user
 
-# ========================================
-# GOOGLE OAUTH ENDPOINTS
-# ========================================
 
 @app.get("/login/google", tags=["OAuth"])
 async def login_google(request: Request):
@@ -206,10 +180,8 @@ async def login_google(request: Request):
     Initiates Google OAuth flow.
     Redirects the user to Google's consent screen.
     """
-    # Build the redirect URI for the callback
     redirect_uri = request.url_for('auth_google')
     
-    # Redirect to Google's OAuth consent screen
     return await oauth.google.authorize_redirect(request, redirect_uri)
 
 @app.get("/auth/google", tags=["OAuth"])
@@ -226,11 +198,9 @@ async def auth_google(request: Request):
     6. Redirects to frontend with the JWT token
     """
     try:
-        # Exchange authorization code for access token
         token = await oauth.google.authorize_access_token(request)
         print(f"🔵 Token received: {token.keys() if token else 'None'}")
         
-        # Get user info from Google
         user_info = token.get('userinfo')
         
         if not user_info:
@@ -239,7 +209,6 @@ async def auth_google(request: Request):
                 detail="Failed to get user info from Google"
             )
         
-        # Extract user details
         email = user_info.get('email')
         full_name = user_info.get('name')
         google_id = user_info.get('sub')  # Google's unique user ID
@@ -250,22 +219,14 @@ async def auth_google(request: Request):
                 detail="Email not provided by Google"
             )
         
-        # ========================================
-        # ALLOWLIST CHECK - CRITICAL SECURITY
-        # ========================================
-        # Check if the user's email is in the allowlist
         if email not in ALLOWED_EMAILS:
             print(f"❌ Access denied for email: {email} (not in allowlist)")
-            # Redirect to login page with access denied error
             error_redirect_url = f"{FRONTEND_URL}/login?error=access_denied"
             return RedirectResponse(url=error_redirect_url)
         
-        # Check if user exists in our database (by email)
         existing_user = get_user(email)
         
         if not existing_user:
-            # Create new user with email as username
-            # Generate a random password (user won't use it, they'll use Google OAuth)
             import secrets
             random_password = secrets.token_urlsafe(32)
             
@@ -277,7 +238,6 @@ async def auth_google(request: Request):
                     full_name=full_name
                 )
             except ValueError as e:
-                # If username (email) already exists, fetch that user
                 existing_user = get_user(email)
                 if not existing_user:
                     raise HTTPException(
@@ -288,28 +248,22 @@ async def auth_google(request: Request):
         else:
             user = existing_user
         
-        # Create our internal JWT access token
         access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
         access_token = create_access_token(
             data={"sub": user.username}, 
             expires_delta=access_token_expires
         )
         
-        # Redirect to frontend with the JWT token
         redirect_url = f"{FRONTEND_URL}/auth/callback?token={access_token}"
         return RedirectResponse(url=redirect_url)
         
     except Exception as e:
-        # Redirect to frontend with error
         error_message = str(e)
         import traceback
         traceback.print_exc()
         redirect_url = f"{FRONTEND_URL}/login?error={error_message}"
         return RedirectResponse(url=redirect_url)
 
-# ========================================
-# DATA ANALYTICS ENDPOINTS
-# ========================================
 
 @app.get("/api/email/campaigns", tags=["Email Analytics"])
 def get_email_campaigns():
@@ -328,7 +282,6 @@ def get_email_campaigns():
         if df.empty:
             return []
 
-        # Convert the DataFrame to a list of dictionaries
         data = df.to_dict(orient="records")
         return data
 
@@ -363,7 +316,6 @@ def get_email_summary():
                 "rawCampaigns": []
             }
 
-        # --- KPI Calculations ---
         total_sends = df['sends'].sum()
         total_opens = df['opens'].sum()
         total_clicks = df['clicks'].sum()
@@ -373,11 +325,8 @@ def get_email_summary():
         avg_ctor = (total_clicks / total_opens) * 100 if total_opens > 0 else 0
         unsubscribe_rate = (total_unsubscribes / total_sends) * 100 if total_sends > 0 else 0
 
-        # --- Trend Calculations (Current vs Previous Period) ---
-        # Split data into two halves for trend comparison
         mid_point = len(df) // 2
         
-        # Previous period (first half)
         prev_df = df.iloc[:mid_point]
         prev_sends = prev_df['sends'].sum()
         prev_opens = prev_df['opens'].sum()
@@ -388,7 +337,6 @@ def get_email_summary():
         prev_ctor = (prev_clicks / prev_opens) * 100 if prev_opens > 0 else 0
         prev_unsubscribe_rate = (prev_unsubscribes / prev_sends) * 100 if prev_sends > 0 else 0
         
-        # Current period (second half)
         curr_df = df.iloc[mid_point:]
         curr_sends = curr_df['sends'].sum()
         curr_opens = curr_df['opens'].sum()
@@ -399,7 +347,6 @@ def get_email_summary():
         curr_ctor = (curr_clicks / curr_opens) * 100 if curr_opens > 0 else 0
         curr_unsubscribe_rate = (curr_unsubscribes / curr_sends) * 100 if curr_sends > 0 else 0
         
-        # Calculate percentage change
         open_rate_trend = ((curr_open_rate - prev_open_rate) / prev_open_rate * 100) if prev_open_rate > 0 else 0
         ctor_trend = ((curr_ctor - prev_ctor) / prev_ctor * 100) if prev_ctor > 0 else 0
         unsubscribe_rate_trend = ((curr_unsubscribe_rate - prev_unsubscribe_rate) / prev_unsubscribe_rate * 100) if prev_unsubscribe_rate > 0 else 0
@@ -418,17 +365,14 @@ def get_email_summary():
             }
         }
 
-        # --- Funnel Data ---
         funnel_data = [
             { "stage": 'Sends', "value": int(total_sends), "color": '#14b8a6' },
             { "stage": 'Opens', "value": int(total_opens), "color": '#a855f7' },
             { "stage": 'Clicks', "value": int(total_clicks), "color": '#22c55e' },
         ]
 
-        # --- Top Campaigns ---
         top_campaigns = df.sort_values(by='clicks', ascending=False).head(10)
 
-        # --- Full Payload ---
         summary = {
             "kpis": kpis,
             "funnelData": funnel_data,
@@ -461,7 +405,6 @@ def get_linkedin_posts():
         if df.empty:
             return []
 
-        # Convert the DataFrame to a list of dictionaries
         data = df.to_dict(orient="records")
         return data
 
@@ -494,7 +437,6 @@ def get_linkedin_summary():
                 "rawPosts": []
             }
 
-        # --- KPI Calculations ---
         total_posts = len(df)
         total_impressions = df['impressions'].sum()
         total_likes = df['likes'].sum()
@@ -505,10 +447,8 @@ def get_linkedin_summary():
         
         avg_engagement_rate = (total_reactions / total_impressions) * 100 if total_impressions > 0 else 0
 
-        # --- Trend Calculations (Current vs Previous Period) ---
         mid_point = len(df) // 2
         
-        # Previous period (first half)
         prev_df = df.iloc[:mid_point]
         prev_impressions = prev_df['impressions'].sum()
         prev_likes = prev_df['likes'].sum()
@@ -517,7 +457,6 @@ def get_linkedin_summary():
         prev_reactions = prev_likes + prev_comments + prev_shares
         prev_engagement_rate = (prev_reactions / prev_impressions) * 100 if prev_impressions > 0 else 0
         
-        # Current period (second half)
         curr_df = df.iloc[mid_point:]
         curr_impressions = curr_df['impressions'].sum()
         curr_likes = curr_df['likes'].sum()
@@ -526,7 +465,6 @@ def get_linkedin_summary():
         curr_reactions = curr_likes + curr_comments + curr_shares
         curr_engagement_rate = (curr_reactions / curr_impressions) * 100 if curr_impressions > 0 else 0
         
-        # Calculate percentage change
         posts_trend = ((len(curr_df) - len(prev_df)) / len(prev_df) * 100) if len(prev_df) > 0 else 0
         impressions_trend = ((curr_impressions - prev_impressions) / prev_impressions * 100) if prev_impressions > 0 else 0
         engagement_rate_trend = ((curr_engagement_rate - prev_engagement_rate) / prev_engagement_rate * 100) if prev_engagement_rate > 0 else 0
@@ -548,11 +486,9 @@ def get_linkedin_summary():
             }
         }
 
-        # --- Engagement Over Time (group by week/month) ---
         df['post_date'] = pd.to_datetime(df['post_date'])
         df_sorted = df.sort_values('post_date')
         
-        # Group by week and calculate totals
         df_sorted['week'] = df_sorted['post_date'].dt.to_period('W').astype(str)
         engagement_over_time = df_sorted.groupby('week').agg({
             'likes': 'sum',
@@ -560,22 +496,17 @@ def get_linkedin_summary():
             'shares': 'sum'
         }).reset_index()
         
-        # Take last 10 weeks
         engagement_over_time = engagement_over_time.tail(10)
         engagement_over_time_list = engagement_over_time.rename(columns={'week': 'date'}).to_dict(orient='records')
 
-        # --- Top Posts by Engagement ---
         df['total_engagement'] = df['likes'] + df['comments'] + df['shares']
         top_posts_df = df.nlargest(10, 'total_engagement')[['content', 'impressions', 'likes', 'comments', 'shares']]
         
-        # Truncate content for display
         top_posts_df['post'] = top_posts_df['content'].str[:30] + '...'
         top_posts_list = top_posts_df[['post', 'impressions', 'likes', 'comments', 'shares']].to_dict(orient='records')
 
-        # --- Sentiment Analysis (simplified - based on engagement rate) ---
         df['engagement_rate'] = ((df['likes'] + df['comments'] + df['shares']) / df['impressions']) * 100
         
-        # Classify posts as positive/neutral/negative based on engagement rate
         positive_count = len(df[df['engagement_rate'] > 5])  # > 5% is positive
         neutral_count = len(df[(df['engagement_rate'] >= 2) & (df['engagement_rate'] <= 5)])  # 2-5% is neutral
         negative_count = len(df[df['engagement_rate'] < 2])  # < 2% is negative
@@ -599,22 +530,17 @@ def get_linkedin_summary():
             }
         ]
 
-        # --- Word Cloud Data (extract common words from content) ---
         from collections import Counter
         import re
         
         all_content = ' '.join(df['content'].astype(str))
-        # Remove common words and extract meaningful terms
         words = re.findall(r'\b[a-zA-Z]{4,}\b', all_content.lower())
-        # Filter out common stop words
         stop_words = {'about', 'this', 'that', 'with', 'from', 'have', 'post', 'insightful', 'topic'}
         filtered_words = [word for word in words if word not in stop_words]
         
-        # Get top 20 words
         word_counts = Counter(filtered_words).most_common(20)
         word_cloud_data = [{"text": word, "value": count} for word, count in word_counts]
 
-        # --- Full Payload ---
         summary = {
             "kpis": kpis,
             "engagementOverTime": engagement_over_time_list,
@@ -658,9 +584,6 @@ def get_linkedin_nlp():
                 "wordCloud": []
             }
 
-        # --- Sentiment Analysis on Simulated Comments ---
-        # Since 'comments' column is numeric, we'll simulate comment text
-        # based on the engagement metrics for proof-of-concept
         
         positive_templates = [
             "Great post! Very insightful.",
@@ -689,14 +612,11 @@ def get_linkedin_nlp():
         simulated_comments = []
         
         for _, row in df.iterrows():
-            # Calculate engagement rate to determine sentiment distribution
             total_engagement = row['likes'] + row['comments'] + row['shares']
             engagement_rate = (total_engagement / row['impressions']) * 100 if row['impressions'] > 0 else 0
             
-            # Number of comments to simulate (use the numeric comments value)
             num_comments = int(row['comments']) if pd.notna(row['comments']) else 0
             
-            # Distribute comments based on engagement rate
             if engagement_rate > 5:  # High engagement - more positive
                 positive_ratio = 0.7
                 neutral_ratio = 0.2
@@ -710,7 +630,6 @@ def get_linkedin_nlp():
                 neutral_ratio = 0.4
                 negative_ratio = 0.3
             
-            # Generate simulated comments
             for _ in range(min(num_comments, 5)):  # Limit to 5 per post for performance
                 rand_val = random.random()
                 if rand_val < positive_ratio:
@@ -720,7 +639,6 @@ def get_linkedin_nlp():
                 else:
                     simulated_comments.append(random.choice(negative_templates))
         
-        # Perform sentiment analysis using TextBlob
         positive_count = 0
         neutral_count = 0
         negative_count = 0
@@ -742,11 +660,8 @@ def get_linkedin_nlp():
             "negative": negative_count
         }
         
-        # --- Word Cloud Analysis on Post Content ---
-        # Combine all post content
         all_content = ' '.join(df['content'].astype(str).tolist())
         
-        # Generate word cloud
         wordcloud = WordCloud(
             width=800,
             height=400,
@@ -759,16 +674,13 @@ def get_linkedin_nlp():
                           'can', 'had', 'her', 'was', 'one', 'our', 'out', 'day', 'get'])
         ).generate(all_content)
         
-        # Extract word frequencies
         word_freq = wordcloud.words_
         
-        # Convert to list of dictionaries sorted by value
         word_cloud_data = [
             {"text": word, "value": int(freq * 100)} 
             for word, freq in sorted(word_freq.items(), key=lambda x: x[1], reverse=True)
         ]
         
-        # Return top 50
         word_cloud_data = word_cloud_data[:50]
         
         return {
@@ -799,7 +711,6 @@ def get_blog_posts():
         if df.empty:
             return []
 
-        # Convert the DataFrame to a list of dictionaries
         data = df.to_dict(orient="records")
         return data
 
@@ -834,7 +745,6 @@ def get_blog_summary():
                 "rawPosts": []
             }
 
-        # --- KPI Calculations ---
         total_posts = len(df)
         total_views = df['views'].sum()
         total_comments = df['comments'].sum()
@@ -843,11 +753,8 @@ def get_blog_summary():
         
         avg_views_per_post = total_views / total_posts if total_posts > 0 else 0
 
-        # --- Trend Calculations (Current vs Previous Period) ---
-        # Split data into two halves for trend comparison
         mid_point = len(df) // 2
         
-        # Previous period (first half)
         prev_df = df.iloc[:mid_point]
         prev_views = prev_df['views'].sum()
         prev_comments = prev_df['comments'].sum()
@@ -855,7 +762,6 @@ def get_blog_summary():
         prev_clicks = prev_df['clicks'].sum()
         prev_avg_views = prev_views / len(prev_df) if len(prev_df) > 0 else 0
         
-        # Current period (second half)
         curr_df = df.iloc[mid_point:]
         curr_views = curr_df['views'].sum()
         curr_comments = curr_df['comments'].sum()
@@ -863,7 +769,6 @@ def get_blog_summary():
         curr_clicks = curr_df['clicks'].sum()
         curr_avg_views = curr_views / len(curr_df) if len(curr_df) > 0 else 0
         
-        # Calculate percentage change
         views_trend = ((curr_views - prev_views) / prev_views * 100) if prev_views > 0 else 0
         avg_views_trend = ((curr_avg_views - prev_avg_views) / prev_avg_views * 100) if prev_avg_views > 0 else 0
         comments_trend = ((curr_comments - prev_comments) / prev_comments * 100) if prev_comments > 0 else 0
@@ -884,11 +789,9 @@ def get_blog_summary():
             }
         }
 
-        # --- Views Over Time (group by month) ---
         df['publish_date'] = pd.to_datetime(df['publish_date'])
         df_sorted = df.sort_values('publish_date')
         
-        # Group by month and calculate totals
         df_sorted['month'] = df_sorted['publish_date'].dt.strftime('%b')
         views_over_time = df_sorted.groupby('month', sort=False).agg({
             'views': 'sum'
@@ -896,11 +799,9 @@ def get_blog_summary():
         
         views_over_time_list = views_over_time.to_dict(orient='records')
 
-        # --- Top Articles by Views ---
         top_articles_df = df.nlargest(10, 'views')[['title', 'views', 'comments', 'shares', 'clicks']]
         top_articles_list = top_articles_df.to_dict(orient='records')
 
-        # --- Full Payload ---
         summary = {
             "kpis": kpis,
             "viewsOverTime": views_over_time_list,
@@ -933,7 +834,6 @@ def get_seo_metrics():
         if df.empty:
             return []
 
-        # Convert the DataFrame to a list of dictionaries
         data = df.to_dict(orient="records")
         return data
 
@@ -966,34 +866,27 @@ def get_seo_summary():
                 "rawMetrics": []
             }
 
-        # --- KPI Calculations ---
         total_clicks = int(df['clicks'].sum())
         average_position = float(df['rank'].mean())
         total_impressions = int(df['impressions'].sum())
         average_ctr = float(df['ctr'].mean() * 100)  # Convert to percentage
         unique_keywords = df['keyword'].nunique()
 
-        # --- Trend Calculations (Current vs Previous Period) ---
-        # Split data into two halves for trend comparison
         mid_point = len(df) // 2
         
-        # Previous period (first half)
         prev_df = df.iloc[:mid_point]
         prev_clicks = prev_df['clicks'].sum()
         prev_position = prev_df['rank'].mean()
         prev_impressions = prev_df['impressions'].sum()
         prev_ctr = prev_df['ctr'].mean() * 100
         
-        # Current period (second half)
         curr_df = df.iloc[mid_point:]
         curr_clicks = curr_df['clicks'].sum()
         curr_position = curr_df['rank'].mean()
         curr_impressions = curr_df['impressions'].sum()
         curr_ctr = curr_df['ctr'].mean() * 100
         
-        # Calculate percentage change
         clicks_trend = ((curr_clicks - prev_clicks) / prev_clicks * 100) if prev_clicks > 0 else 0
-        # For position, lower is better, so we invert the trend
         position_trend = -((curr_position - prev_position) / prev_position * 100) if prev_position > 0 else 0
         impressions_trend = ((curr_impressions - prev_impressions) / prev_impressions * 100) if prev_impressions > 0 else 0
         ctr_trend = ((curr_ctr - prev_ctr) / prev_ctr * 100) if prev_ctr > 0 else 0
@@ -1012,7 +905,6 @@ def get_seo_summary():
             }
         }
 
-        # --- Full Payload ---
         summary = {
             "kpis": kpis,
             "rawMetrics": df.to_dict(orient="records")
@@ -1043,7 +935,6 @@ def get_web_analytics():
         if df.empty:
             return []
 
-        # Convert the DataFrame to a list of dictionaries
         data = df.to_dict(orient="records")
         return data
 
@@ -1076,30 +967,21 @@ def get_web_summary():
                 "rawAnalytics": []
             }
 
-        # --- KPI Calculations ---
         total_page_views = int(df['page_views'].sum())
         total_unique_visitors = int(df['unique_visitors'].sum())
         
-        # Average bounce rate (bounce_rate is already a decimal, e.g., 0.603)
         average_bounce_rate = float(df['bounce_rate'].mean() * 100)  # Convert to percentage
         
-        # Average session duration in seconds
         average_session_duration_seconds = float(df['avg_session_duration'].mean())
         
-        # Convert to minutes:seconds format
         minutes = int(average_session_duration_seconds // 60)
         seconds = int(average_session_duration_seconds % 60)
         formatted_session_duration = f"{minutes}:{seconds:02d}"
 
-        # --- Additional Calculated Metrics ---
-        # Pages per Session (total page views / total unique visitors)
         pages_per_session = (total_page_views / total_unique_visitors) if total_unique_visitors > 0 else 0
 
-        # --- Trend Calculations (Current vs Previous Period) ---
-        # Split data into two halves for trend comparison
         mid_point = len(df) // 2
         
-        # Previous period (first half)
         prev_df = df.iloc[:mid_point]
         prev_page_views = prev_df['page_views'].sum()
         prev_unique_visitors = prev_df['unique_visitors'].sum()
@@ -1107,7 +989,6 @@ def get_web_summary():
         prev_session_duration = prev_df['avg_session_duration'].mean()
         prev_pages_per_session = (prev_page_views / prev_unique_visitors) if prev_unique_visitors > 0 else 0
         
-        # Current period (second half)
         curr_df = df.iloc[mid_point:]
         curr_page_views = curr_df['page_views'].sum()
         curr_unique_visitors = curr_df['unique_visitors'].sum()
@@ -1115,7 +996,6 @@ def get_web_summary():
         curr_session_duration = curr_df['avg_session_duration'].mean()
         curr_pages_per_session = (curr_page_views / curr_unique_visitors) if curr_unique_visitors > 0 else 0
         
-        # Calculate percentage change
         page_views_trend = ((curr_page_views - prev_page_views) / prev_page_views * 100) if prev_page_views > 0 else 0
         bounce_rate_trend = ((curr_bounce_rate - prev_bounce_rate) / prev_bounce_rate * 100) if prev_bounce_rate > 0 else 0
         session_duration_trend = ((curr_session_duration - prev_session_duration) / prev_session_duration * 100) if prev_session_duration > 0 else 0
@@ -1136,7 +1016,6 @@ def get_web_summary():
             }
         }
 
-        # --- Full Payload ---
         summary = {
             "kpis": kpis,
             "rawAnalytics": df.to_dict(orient="records")
@@ -1157,34 +1036,26 @@ def get_overview():
     including unified KPIs, funnel data, source mix, and feature importances.
     """
     try:
-        # --- Load all 5 data sources ---
-        # Email campaigns
         if not os.path.exists(csv_path):
             raise HTTPException(status_code=404, detail=f"Email data file not found: {csv_path}")
         email_df = pd.read_csv(csv_path)
         
-        # LinkedIn posts
         if not os.path.exists(linkedin_csv_path):
             raise HTTPException(status_code=404, detail=f"LinkedIn data file not found: {linkedin_csv_path}")
         linkedin_df = pd.read_csv(linkedin_csv_path)
         
-        # Blog posts
         if not os.path.exists(blog_csv_path):
             raise HTTPException(status_code=404, detail=f"Blog data file not found: {blog_csv_path}")
         blog_df = pd.read_csv(blog_csv_path)
         
-        # Web analytics
         if not os.path.exists(web_analytics_csv_path):
             raise HTTPException(status_code=404, detail=f"Web analytics data file not found: {web_analytics_csv_path}")
         web_df = pd.read_csv(web_analytics_csv_path)
         
-        # SEO metrics
         if not os.path.exists(seo_csv_path):
             raise HTTPException(status_code=404, detail=f"SEO data file not found: {seo_csv_path}")
         seo_df = pd.read_csv(seo_csv_path)
         
-        # --- Create unified master_df ---
-        # Prepare web analytics (already has date column)
         web_df['date'] = pd.to_datetime(web_df['date'])
         web_daily = web_df.groupby('date').agg({
             'page_views': 'sum',
@@ -1193,7 +1064,6 @@ def get_overview():
             'avg_session_duration': 'mean'
         }).reset_index()
         
-        # Prepare email campaigns (use send_date)
         email_df['send_date'] = pd.to_datetime(email_df['send_date'])
         email_daily = email_df.groupby('send_date').agg({
             'clicks': 'sum',
@@ -1202,7 +1072,6 @@ def get_overview():
         }).reset_index()
         email_daily.rename(columns={'send_date': 'date', 'clicks': 'email_clicks'}, inplace=True)
         
-        # Prepare LinkedIn posts (use post_date)
         linkedin_df['post_date'] = pd.to_datetime(linkedin_df['post_date'])
         linkedin_daily = linkedin_df.groupby('post_date').agg({
             'impressions': 'sum',
@@ -1213,7 +1082,6 @@ def get_overview():
         linkedin_daily.rename(columns={'post_date': 'date'}, inplace=True)
         linkedin_daily['linkedin_engagement'] = linkedin_daily['likes'] + linkedin_daily['comments'] + linkedin_daily['shares']
         
-        # Prepare blog posts (use publish_date)
         blog_df['publish_date'] = pd.to_datetime(blog_df['publish_date'])
         blog_daily = blog_df.groupby('publish_date').agg({
             'views': 'sum',
@@ -1223,7 +1091,6 @@ def get_overview():
         blog_daily.rename(columns={'publish_date': 'date', 'views': 'blog_views'}, inplace=True)
         blog_daily['blog_engagement'] = blog_daily['comments'] + blog_daily['shares']
         
-        # Prepare SEO metrics (use date)
         seo_df['date'] = pd.to_datetime(seo_df['date'])
         seo_daily = seo_df.groupby('date').agg({
             'clicks': 'sum',
@@ -1232,23 +1099,18 @@ def get_overview():
         }).reset_index()
         seo_daily.rename(columns={'clicks': 'seo_clicks', 'impressions': 'seo_impressions'}, inplace=True)
         
-        # Merge all data sources into master_df
         master_df = web_daily.copy()
         master_df = master_df.merge(email_daily[['date', 'email_clicks', 'opens', 'sends']], on='date', how='outer')
         master_df = master_df.merge(linkedin_daily[['date', 'impressions', 'linkedin_engagement']], on='date', how='outer')
         master_df = master_df.merge(blog_daily[['date', 'blog_views', 'blog_engagement']], on='date', how='outer')
         master_df = master_df.merge(seo_daily[['date', 'seo_clicks', 'seo_impressions']], on='date', how='outer')
         
-        # Fill NaN values with 0
         master_df = master_df.fillna(0)
         
-        # Sort by date
         master_df = master_df.sort_values('date')
         
-        # Calculate total social engagement (LinkedIn + Blog)
         master_df['total_social_engagement'] = master_df['linkedin_engagement'] + master_df['blog_engagement']
         
-        # --- Calculate KPIs ---
         total_unique_visitors = int(master_df['unique_visitors'].sum())
         total_social_engagement = int(master_df['total_social_engagement'].sum())
         total_email_clicks = int(master_df['email_clicks'].sum())
@@ -1261,8 +1123,6 @@ def get_overview():
             "totalSeoClicks": total_seo_clicks
         }
         
-        # --- Calculate Funnel Data ---
-        # Funnel stages: Awareness -> Engagement -> Traffic -> Visitors
         total_impressions = int(master_df['impressions'].sum() + master_df['seo_impressions'].sum())
         total_traffic = total_email_clicks + total_seo_clicks
         
@@ -1293,7 +1153,6 @@ def get_overview():
             }
         ]
         
-        # --- Calculate Source Mix Data (for pie chart) ---
         source_mix_data = [
             {
                 "name": "Email Clicks",
@@ -1307,32 +1166,24 @@ def get_overview():
             }
         ]
         
-        # --- Calculate Feature Importances (using simplified ML model) ---
-        # For this endpoint, we'll calculate basic feature correlations with unique_visitors
-        # as a proxy for feature importance
         try:
             from sklearn.ensemble import RandomForestRegressor
             import numpy as np
             
-            # Prepare features for modeling
             feature_columns = ['email_clicks', 'total_social_engagement', 'seo_clicks', 
                              'page_views', 'bounce_rate', 'avg_session_duration']
             
-            # Filter out rows where unique_visitors is 0
             modeling_df = master_df[master_df['unique_visitors'] > 0].copy()
             
             if len(modeling_df) > 10:  # Need enough data for modeling
                 X = modeling_df[feature_columns].fillna(0)
                 y = modeling_df['unique_visitors']
                 
-                # Train a simple Random Forest model
                 model = RandomForestRegressor(n_estimators=50, random_state=42, max_depth=5)
                 model.fit(X, y)
                 
-                # Get feature importances
                 importances = model.feature_importances_
                 
-                # Format as list of dictionaries
                 feature_importances = [
                     {"feature": "Email Clicks", "importance": float(importances[0])},
                     {"feature": "Social Engagement", "importance": float(importances[1])},
@@ -1342,10 +1193,8 @@ def get_overview():
                     {"feature": "Session Duration", "importance": float(importances[5])}
                 ]
                 
-                # Sort by importance (descending)
                 feature_importances = sorted(feature_importances, key=lambda x: x['importance'], reverse=True)
             else:
-                # Not enough data for modeling - return placeholder
                 feature_importances = [
                     {"feature": "Email Clicks", "importance": 0.25},
                     {"feature": "Social Engagement", "importance": 0.20},
@@ -1355,7 +1204,6 @@ def get_overview():
                     {"feature": "Session Duration", "importance": 0.10}
                 ]
         except Exception as e:
-            # If ML fails, return correlation-based importance
             print(f"ML model failed, using correlation: {e}")
             correlations = modeling_df[feature_columns + ['unique_visitors']].corr()['unique_visitors'].abs()
             total_corr = correlations[feature_columns].sum()
@@ -1370,7 +1218,6 @@ def get_overview():
             ]
             feature_importances = sorted(feature_importances, key=lambda x: x['importance'], reverse=True)
         
-        # --- Full Payload ---
         overview = {
             "kpis": kpis,
             "funnelData": funnel_data,
@@ -1389,9 +1236,6 @@ def get_overview():
             detail=f"An unexpected server error occurred: {str(e)}"
         )
 
-# ========================================
-# AI RECOMMENDATIONS ENDPOINT
-# ========================================
 
 class RecommendationRequest(BaseModel):
     """Request model for AI recommendations"""
@@ -1404,9 +1248,6 @@ class RecommendationResponse(BaseModel):
     success: bool
     message: str = ""
 
-# ========================================
-# DYNAMIC CSV ANALYSIS MODELS
-# ========================================
 
 class DynamicAnalysisResponse(BaseModel):
     """Response model for dynamic CSV analysis"""
@@ -1438,7 +1279,6 @@ async def get_ai_recommendations(
     - AI-generated actionable recommendations
     """
     try:
-        # Validate channel type
         valid_channels = ['email', 'linkedin', 'blog', 'seo', 'web', 'overview']
         if channel_type.lower() not in valid_channels:
             raise HTTPException(
@@ -1446,14 +1286,12 @@ async def get_ai_recommendations(
                 detail=f"Invalid channel type. Must be one of: {', '.join(valid_channels)}"
             )
         
-        # Validate data summary
         if not request.data_summary or len(request.data_summary.strip()) == 0:
             raise HTTPException(
                 status_code=400,
                 detail="data_summary cannot be empty"
             )
         
-        # Call the Gemini API to get recommendations
         recommendations = await get_gemini_recommendations(
             channel_name=channel_type,
             data_summary=request.data_summary
@@ -1492,7 +1330,6 @@ async def upload_csv_for_analysis(channel_type: str, file: UploadFile = File(...
     - JSON object with analysis results based on the channel type
     """
     try:
-        # Validate channel type
         valid_channels = ['email', 'linkedin', 'blog', 'seo', 'web']
         if channel_type not in valid_channels:
             raise HTTPException(
@@ -1500,14 +1337,12 @@ async def upload_csv_for_analysis(channel_type: str, file: UploadFile = File(...
                 detail=f"Invalid channel_type '{channel_type}'. Must be one of: {', '.join(valid_channels)}"
             )
         
-        # Validate file type
         if not file.filename.endswith('.csv'):
             raise HTTPException(
                 status_code=400,
                 detail="Invalid file type. Only CSV files are accepted."
             )
         
-        # Read the uploaded file
         try:
             contents = await file.read()
             csv_string = contents.decode('utf-8')
@@ -1518,18 +1353,15 @@ async def upload_csv_for_analysis(channel_type: str, file: UploadFile = File(...
                 detail=f"Failed to parse CSV file: {str(e)}"
             )
         
-        # Check if DataFrame is empty
         if df.empty:
             raise HTTPException(
                 status_code=400,
                 detail="The uploaded CSV file is empty."
             )
         
-        # Perform analysis based on channel type
         analysis_result = {}
         
         if channel_type == 'email':
-            # Email campaign analysis
             required_columns = ['sends', 'opens', 'clicks']
             missing_columns = [col for col in required_columns if col not in df.columns]
             
@@ -1559,7 +1391,6 @@ async def upload_csv_for_analysis(channel_type: str, file: UploadFile = File(...
             }
         
         elif channel_type == 'linkedin':
-            # LinkedIn posts analysis
             required_columns = ['impressions', 'likes', 'comments', 'shares']
             missing_columns = [col for col in required_columns if col not in df.columns]
             
@@ -1592,7 +1423,6 @@ async def upload_csv_for_analysis(channel_type: str, file: UploadFile = File(...
             }
         
         elif channel_type == 'blog':
-            # Blog posts analysis
             required_columns = ['views', 'comments', 'shares']
             missing_columns = [col for col in required_columns if col not in df.columns]
             
@@ -1621,7 +1451,6 @@ async def upload_csv_for_analysis(channel_type: str, file: UploadFile = File(...
             }
         
         elif channel_type == 'seo':
-            # SEO metrics analysis
             required_columns = ['clicks', 'impressions', 'rank']
             missing_columns = [col for col in required_columns if col not in df.columns]
             
@@ -1649,7 +1478,6 @@ async def upload_csv_for_analysis(channel_type: str, file: UploadFile = File(...
             }
         
         elif channel_type == 'web':
-            # Web analytics analysis
             required_columns = ['page_views', 'unique_visitors']
             missing_columns = [col for col in required_columns if col not in df.columns]
             
@@ -1662,7 +1490,6 @@ async def upload_csv_for_analysis(channel_type: str, file: UploadFile = File(...
             total_page_views = int(df['page_views'].sum())
             total_unique_visitors = int(df['unique_visitors'].sum())
             
-            # Optional columns
             avg_bounce_rate = float(df['bounce_rate'].mean() * 100) if 'bounce_rate' in df.columns else None
             avg_session_duration = float(df['avg_session_duration'].mean()) if 'avg_session_duration' in df.columns else None
             
@@ -1683,7 +1510,6 @@ async def upload_csv_for_analysis(channel_type: str, file: UploadFile = File(...
                 "columns": list(df.columns)
             }
         
-        # Add summary statistics
         analysis_result["summary"] = {
             "fileName": file.filename,
             "fileSize": len(contents),
@@ -1700,9 +1526,6 @@ async def upload_csv_for_analysis(channel_type: str, file: UploadFile = File(...
             detail=f"An unexpected error occurred during file upload: {str(e)}"
         )
 
-# ========================================
-# ADVANCED MULTI-STEP AI AGENT ENDPOINT
-# ========================================
 
 @app.post("/api/upload/dynamic-analysis/{channel_type}", response_model=DynamicAnalysisResponse, tags=["Dynamic AI Analysis"])
 async def dynamic_csv_analysis(
@@ -1735,7 +1558,6 @@ async def dynamic_csv_analysis(
     print(f"👤 User: {current_user.username}")
     
     try:
-        # Validate channel type
         valid_channels = ['email', 'linkedin', 'blog', 'seo', 'web', 'overview']
         if channel_type not in valid_channels:
             raise HTTPException(
@@ -1743,16 +1565,13 @@ async def dynamic_csv_analysis(
                 detail=f"Invalid channel_type. Must be one of: {', '.join(valid_channels)}"
             )
         
-        # Validate file type
         if not file.filename.endswith('.csv'):
             raise HTTPException(
                 status_code=400,
                 detail="Only CSV files are accepted."
             )
         
-        # ========================================
 
-        # ========================================
         print(f"\n{'─'*60}")
         print("📥 STEP 1: LOADING CSV AND DATA PROFILING")
         print(f"{'─'*60}")
@@ -1771,11 +1590,9 @@ async def dynamic_csv_analysis(
         if df.empty:
             raise HTTPException(status_code=400, detail="CSV file is empty")
         
-        # Get column names and data types
         column_names = df.columns.tolist()
         column_dtypes = {col: str(df[col].dtype) for col in column_names}
         
-        # Get statistical summary (first few rows and basic stats)
         sample_data = df.head(3).to_dict('records')
         numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
         
@@ -1791,14 +1608,11 @@ async def dynamic_csv_analysis(
         print(f"📋 Columns: {', '.join(column_names)}")
         print(f"🔢 Numeric columns: {', '.join(numeric_cols)}")
         
-        # ========================================
 
-        # ========================================
         print(f"\n{'─'*60}")
         print("🤖 STEP 2: AI COLUMN INTERPRETATION (Gemini Call #1)")
         print(f"{'─'*60}")
         
-        # Configure Gemini API
         api_key = os.getenv("GEMINI_API_KEY")
         if not api_key:
             raise ValueError("GEMINI_API_KEY not found in environment variables")
@@ -1806,7 +1620,6 @@ async def dynamic_csv_analysis(
         genai.configure(api_key=api_key)
         model = genai.GenerativeModel('gemini-flash-latest')
         
-        # Create prompt for column interpretation
         interpretation_prompt = f"""
 You are an expert data analyst. Analyze the following CSV schema and identify the meaning of each column.
 
@@ -1846,7 +1659,6 @@ Do not include any explanatory text, only the JSON object.
             response_1 = model.generate_content(interpretation_prompt)
             interpretation_text = response_1.text.strip()
             
-            # Clean the response (remove markdown code blocks if present)
             if interpretation_text.startswith("```json"):
                 interpretation_text = interpretation_text.split("```json")[1].split("```")[0].strip()
             elif interpretation_text.startswith("```"):
@@ -1857,7 +1669,6 @@ Do not include any explanatory text, only the JSON object.
             print(f"🎯 Key metrics: {', '.join(column_interpretation.get('key_metrics', []))}")
             
         except json.JSONDecodeError as je:
-            # Fallback interpretation
             column_interpretation = {
                 "columns": {col: {"meaning": f"{col} data", "type": "measure" if col in numeric_cols else "dimension", "category": "other"} for col in column_names},
                 "primary_date_column": None,
@@ -1866,9 +1677,7 @@ Do not include any explanatory text, only the JSON object.
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Column interpretation failed: {str(e)}")
         
-        # ========================================
 
-        # ========================================
         print(f"\n{'─'*60}")
         print("🎨 STEP 3: AI DASHBOARD DESIGN (Gemini Call #2)")
         print(f"{'─'*60}")
@@ -1925,7 +1734,6 @@ Do not include any explanatory text, only the JSON object.
             response_2 = model.generate_content(dashboard_design_prompt)
             design_text = response_2.text.strip()
             
-            # Clean the response
             if design_text.startswith("```json"):
                 design_text = design_text.split("```json")[1].split("```")[0].strip()
             elif design_text.startswith("```"):
@@ -1936,7 +1744,6 @@ Do not include any explanatory text, only the JSON object.
             print(f"📈 Charts proposed: {len(dashboard_design.get('charts', []))}")
             
         except json.JSONDecodeError as je:
-            # Fallback design
             dashboard_design = {
                 "kpis": [
                     {"name": "Total Records", "description": "Total number of records", "calculation": "count", "columns_needed": [], "format": "number"}
@@ -1948,22 +1755,18 @@ Do not include any explanatory text, only the JSON object.
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Dashboard design failed: {str(e)}")
         
-        # ========================================
 
-        # ========================================
         print(f"\n{'─'*60}")
         print(f"{'─'*60}")
         
         calculated_kpis = {}
         
-        # Calculate KPIs
         for kpi in dashboard_design.get('kpis', []):
             kpi_name = kpi['name']
             calculation = kpi['calculation'].lower()
             columns_needed = kpi.get('columns_needed', [])
             
             try:
-                # Validate columns exist
                 valid_columns = [col for col in columns_needed if col in df.columns]
                 
                 if 'sum' in calculation and valid_columns:
@@ -1977,7 +1780,6 @@ Do not include any explanatory text, only the JSON object.
                 elif 'min' in calculation and valid_columns:
                     calculated_kpis[kpi_name] = float(df[valid_columns[0]].min())
                 else:
-                    # Try to evaluate as a simple column sum
                     if valid_columns:
                         calculated_kpis[kpi_name] = float(df[valid_columns[0]].sum())
                     else:
@@ -1988,7 +1790,6 @@ Do not include any explanatory text, only the JSON object.
             except Exception as e:
                 calculated_kpis[kpi_name] = 0.0
         
-        # Prepare chart data
         prepared_charts = []
         
         for chart in dashboard_design.get('charts', []):
@@ -2008,10 +1809,8 @@ Do not include any explanatory text, only the JSON object.
                 grouping = chart.get('grouping')
                 aggregation = chart.get('aggregation', 'sum')
                 
-                # Validate columns
                 if x_col and x_col in df.columns and y_col and y_col in df.columns:
                     if grouping and grouping in df.columns:
-                        # Group by grouping column
                         if aggregation == 'sum':
                             grouped = df.groupby(grouping)[y_col].sum()
                         elif aggregation == 'average' or aggregation == 'mean':
@@ -2023,7 +1822,6 @@ Do not include any explanatory text, only the JSON object.
                         
                         chart_data['data'] = [{"label": str(k), "value": float(v)} for k, v in grouped.items()]
                     else:
-                        # Take top 10 records
                         top_data = df.nlargest(10, y_col) if y_col in numeric_cols else df.head(10)
                         chart_data['data'] = [
                             {"label": str(row[x_col]), "value": float(row[y_col]) if y_col in numeric_cols else 0}
@@ -2037,11 +1835,9 @@ Do not include any explanatory text, only the JSON object.
                 print(f"  ✗ Error creating {chart_title}: {str(e)}")
                 continue
         
-        # Generate AI Recommendations
         print(f"\nGenerating AI Recommendations...")
         print(f"{'─'*60}")
         
-        # Build data summary for recommendations
         kpi_summary_parts = [f"{name}: {value}" for name, value in calculated_kpis.items()]
         data_summary = f"""
 Channel: {channel_type}
@@ -2071,9 +1867,7 @@ Key Insights:
                 "Consider A/B testing different strategies based on the insights from this analysis"
             ]
         
-        # ========================================
 
-        # ========================================
         print(f"\n{'─'*60}")
         print(f"{'─'*60}")
         
@@ -2105,7 +1899,3 @@ Key Insights:
             detail=f"Dynamic analysis failed: {str(e)}"
         )
 
-# To run this application:
-# 1. Navigate to the backend directory:
-#    cd /Users/phoenix/Documents/MscProject/ito-a-dashboard/Amit/ITOA_Dashboard/src/backend
-# 2. Run the command: uvicorn app:app --reload
